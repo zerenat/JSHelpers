@@ -3,7 +3,6 @@ const { error } = require("console");
 const crypto = require("crypto");
 const creds = require("./credentials.json")
 const objectTemplate = require("./input_template.json")
-// const { fromStatic } = require("@aws-sdk/credential-provider-node");
 
 
 const dynamoDbClient = new DynamoDBClient({
@@ -14,7 +13,6 @@ const dynamoDbClient = new DynamoDBClient({
   }
 });
 
-// GET
 async function getItems(tableName, key = null) {
 	let allResults = [];
 	let lastEvaluatedKey = null;
@@ -68,7 +66,6 @@ async function getItems(tableName, key = null) {
   	}
 }
 
-// PUT
 async function putItems(tableName, items) {
 	if (!Array.isArray(items)) {
 		items = [items]
@@ -125,7 +122,6 @@ async function putItems(tableName, items) {
     });
 }
 
-// // DELETE
 async function deleteItems(tableName, keys) {
 	const params = {
     	TableName: tableName,
