@@ -1,8 +1,7 @@
-const { DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand, DeleteItemCommand, ScanCommand  } = require("@aws-sdk/client-dynamodb");
-const { error } = require("console");
+const { DynamoDBClient, BatchWriteItemCommand, PutItemCommand, UpdateItemCommand, DeleteItemCommand, ScanCommand  } = require("@aws-sdk/client-dynamodb");
+const { error, table } = require("console");
 const crypto = require("crypto");
 const creds = require("./credentials.json")
-const objectTemplate = require("./input_template.json")
 
 
 const dynamoDbClient = new DynamoDBClient({
@@ -28,6 +27,7 @@ async function getItems(tableName, key = null) {
 				TableName: tableName,
 			};
 		}
+
 		do {
 			if (lastEvaluatedKey) {
 				params.ExclusiveStartKey = lastEvaluatedKey;
@@ -40,26 +40,26 @@ async function getItems(tableName, key = null) {
 
 		return {
 			message: "Data retrieval successful",
-			data: allResults,
+			result: allResults,
 			error: null
         };
  	} catch (error) {
       	if (error.name === 'ResourceNotFoundException') {
           	return {
 				message: "Table not found.",
-				data: null,
+				result: null,
 				error: error,
           	};
       } else if (error.name === 'RequestLimitExceeded') {
             return {
 				message: "Request limit exceeded.",
-				data: null,
+				result: null,
 				error: error,
             };
       } else {
           	return {
 				message: "Failed to retrieve data.",
-				data: null,
+				result: null,
 				error: error,
             };
         }
@@ -70,56 +70,53 @@ async function putItems(tableName, items) {
 	if (!Array.isArray(items)) {
 		items = [items]
 	}
-	let resultSet = [];
-	let error = False;
-
-	items.forEach(async (item) => {
-		try {
-			let result = await dynamoDbClient.send(new PutItemCommand());
-			resultSet.push({
-				item: item,
-				message: "Insertion successful",
-				result: result,
-				error: null
-			})
-		} catch (error) {
-			error = True;
-			if (error.name === 'ResourceNotFoundException') {
-				resultSet.push({
-					item: item,
-					message: "Table not found",
-					statusCode: 404,
-					result: result,
-					error: error
-				})
-			} else if (error.name === 'RequestLimitExceeded') {
-				resultSet.push({
-					item: item,
-					message: "Request limit exceeded",
-					statusCode: 429,
-					result: result,
-					error: error
-				})
-			} else {
-				resultSet.push({
-					item: item,
-					message: "Failed to insert data",
-					statusCode: 500,
-					result: result,
-					error: error
-				})
-			}
-		} finally {
-			let message = "Data entry completed successfully.";
-			if (error) {
-				message = "Data entry completed with errors."
-			}
+	let tableItems = [];
+	if (items.length > 0) {
+		items.forEach(async (element) => {
+			tableItems.push({"PutRequest": {
+				"Item": element
+			}})
+		});
+	} else {
+		return {
+			message: "No items to insert.",
+			result: null,
+			statusCode: 400,
+			error: null
+        };
+	}
+	try {
+		const command = new BatchWriteItemCommand({"RequestItems": {[tableName]: tableItems}});
+		result = await dynamoDbClient.send(command);
+		return {
+			message: "Data insertion complete",
+			result: result,
+			statusCode: 200
+		}
+	} catch (error) {
+		if (error.name === 'ResourceNotFoundException') {
 			return {
-				message: message,
-				results: resultSet
+				message: "Table not found",
+				result: result,
+				statusCode: 404,
+				error: error
+			}
+		} else if (error.name === 'RequestLimitExceeded') {
+			return {
+				message: "Request limit exceeded",
+				result: result,
+				statusCode: 429,
+				error: error
+			}
+		} else {
+			return {
+				message: "Failed to insert data",
+				result: result,
+				statusCode: 500,
+				error: error
 			}
 		}
-    });
+	}
 }
 
 async function deleteItems(tableName, keys) {
@@ -140,5 +137,5 @@ function createUuid () {
 }
 
 (async () => {
-	console.log(creds);
-})();
+	return putItems("COBIA_Manual_Changes", input);
+})().then((result)=>{console.log(result);});
