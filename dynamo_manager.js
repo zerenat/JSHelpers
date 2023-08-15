@@ -1,21 +1,60 @@
-const { DynamoDBClient, BatchWriteItemCommand, PutItemCommand, UpdateItemCommand, DeleteItemCommand, ScanCommand  } = require("@aws-sdk/client-dynamodb");
-const { error, table } = require("console");
-const crypto = require("crypto");
-const creds = require("./credentials.json")
-const template = require("./input_template.json")
+const { DynamoDBClient, 
+	BatchWriteItemCommand,  
+	DeleteItemCommand, 
+	ScanCommand  } = require("@aws-sdk/client-dynamodb");
 
 
 exports.handler = async (event, context) => {
-	console.log(event);
-	console.log(context);
+	const action = event.action;
+	const table = event.table;
+	const data = event.data;
+	switch (action) {
+		case 'get':
+			let key = null;
+			if (data) {
+				key = data.key;	
+			}
+			return getItems(table, key);
+		case 'insert':
+			const payload = data.payload || null;
+			if (payload) {
+				return insertItems(table, payload);	
+			} else {
+				return {
+					message: "Insert payload is undefined",
+					result: null,
+					statusCode: 400,
+					error: null
+				}
+			}
+		case 'delete':
+			if (payload) {
+				return deleteItems(table, payload);	
+			} else {
+				return {
+					message: "Delete payload is undefined",
+					result: null,
+					statusCode: 400,
+					error: null
+				}
+			}
+		default:
+			return {
+				message: "action is either undefined or does not match any available operations",
+				result: null,
+				statusCode: 400,
+				error: null
+			}
+	}
 }
 
+
 const dynamoDbClient = new DynamoDBClient({
-  region: "eu-west-1",
-  credentials: {
-    accessKeyId: creds.accessKeyId,
-    secretAccessKey: creds.secretAccessKey,
-  }
+	region: "eu-west-1",
+	credentials: {
+	accessKeyId: process.env.accessKeyId,
+	secretAccessKey: process.env.secretAccessKey,
+	}
 });
 
 async function getItems(tableName, key = null) {
@@ -48,31 +87,31 @@ async function getItems(tableName, key = null) {
 			message: "Data retrieval successful",
 			result: allResults,
 			error: null
-        };
- 	} catch (error) {
-      	if (error.name === 'ResourceNotFoundException') {
-          	return {
+		};
+	} catch (error) {
+		if (error.name === 'ResourceNotFoundException') {
+			return {
 				message: "Table not found.",
 				result: null,
 				error: error,
-          	};
-      } else if (error.name === 'RequestLimitExceeded') {
-            return {
+			};
+	} else if (error.name === 'RequestLimitExceeded') {
+			return {
 				message: "Request limit exceeded.",
 				result: null,
 				error: error,
-            };
-      } else {
-          	return {
+			};
+	} else {
+			return {
 				message: "Failed to retrieve data.",
 				result: null,
 				error: error,
-            };
-        }
-  	}
+			};
+		}
+	}
 }
 
-async function putItems(tableName, items) {
+async function insertItems(tableName, items) {
 	if (!Array.isArray(items)) {
 		items = [items]
 	}
@@ -89,7 +128,7 @@ async function putItems(tableName, items) {
 			result: null,
 			statusCode: 400,
 			error: null
-        };
+		};
 	}
 	let result = null;
 	try {
@@ -145,7 +184,7 @@ async function deleteItems(tableName, columnName, values) {
 			result: null,
 			statusCode: 400,
 			error: null
-        };
+		};
 	}
 	let result = null;
 	try {
