@@ -2,7 +2,13 @@ const { DynamoDBClient, BatchWriteItemCommand, PutItemCommand, UpdateItemCommand
 const { error, table } = require("console");
 const crypto = require("crypto");
 const creds = require("./credentials.json")
+const template = require("./input_template.json")
 
+
+exports.handler = async (event, context) => {
+	console.log(event);
+	console.log(context);
+}
 
 const dynamoDbClient = new DynamoDBClient({
   region: "eu-west-1",
@@ -79,12 +85,13 @@ async function putItems(tableName, items) {
 		});
 	} else {
 		return {
-			message: "No items to insert.",
+			message: "No items to insert",
 			result: null,
 			statusCode: 400,
 			error: null
         };
 	}
+	let result = null;
 	try {
 		const command = new BatchWriteItemCommand({"RequestItems": {[tableName]: tableItems}});
 		result = await dynamoDbClient.send(command);
@@ -119,23 +126,59 @@ async function putItems(tableName, items) {
 	}
 }
 
-async function deleteItems(tableName, keys) {
-	const params = {
-    	TableName: tableName,
-    	Key: keys,
-  	};
-
+async function deleteItems(tableName, columnName, values) {
+	if (!Array.isArray(values)) {
+		values = [values]
+	}
+	let rowValues = [];
+	if (values.length > 0) {
+		values.forEach(async (value) => {
+			rowValues.push({"DeleteRequest": {
+				Key: {
+					[columnName]: value
+				}
+			}})
+		});
+	} else {
+		return {
+			message: "No items to delete",
+			result: null,
+			statusCode: 400,
+			error: null
+        };
+	}
+	let result = null;
 	try {
-		await dynamoDbClient.send(new DeleteItemCommand(params));
+		const command = new BatchWriteItemCommand({"RequestItems": {[tableName]: rowValues}});
+		result = await dynamoDbClient.send(command);
+		return {
+			message: "Data insertion complete",
+			result: result,
+			statusCode: 200
+		}
 	} catch (error) {
-		throw error;
+		if (error.name === 'ResourceNotFoundException') {
+			return {
+				message: "Table not found",
+				result: result,
+				statusCode: 404,
+				error: error
+			}
+		} else if (error.name === 'RequestLimitExceeded') {
+			return {
+				message: "Request limit exceeded",
+				result: result,
+				statusCode: 429,
+				error: error
+			}
+		} else {
+			return {
+				message: "Failed to delete items",
+				result: result,
+				statusCode: 500,
+				error: error
+			}
+		}
 	}
 }
 
-function createUuid () {
-	return crypto.randomUUID();
-}
-
-(async () => {
-	return putItems("COBIA_Manual_Changes", input);
-})().then((result)=>{console.log(result);});
