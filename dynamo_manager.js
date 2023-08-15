@@ -1,7 +1,8 @@
 const { DynamoDBClient, 
-	BatchWriteItemCommand,  
-	DeleteItemCommand, 
-	ScanCommand  } = require("@aws-sdk/client-dynamodb");
+		BatchWriteItemCommand,  
+		ScanCommand,
+		GetItemCommand} = require("@aws-sdk/client-dynamodb");
+const creds = require("./credentials.json")
 
 
 exports.handler = async (event, context) => {
@@ -48,46 +49,46 @@ exports.handler = async (event, context) => {
 	}
 }
 
-
 const dynamoDbClient = new DynamoDBClient({
 	region: "eu-west-1",
 	credentials: {
-	accessKeyId: process.env.accessKeyId,
-	secretAccessKey: process.env.secretAccessKey,
+	  accessKeyId: creds.accessKeyId,
+	  secretAccessKey: creds.secretAccessKey,
 	}
-});
+  });
 
-async function getItems(tableName, key = null) {
+async function getItems(tableName, partitionKey = null, sortKey = null) {
 	let allResults = [];
 	let lastEvaluatedKey = null;
-	let params = null;
+	let params = {
+		TableName: tableName
+	};
 	try {
-		if (key) {
-			params = {
-				TableName: tableName,
-				Key: key,
+		if (partitionKey) {
+			params.Key = {[partitionKey.name]: {"S": partitionKey.value}}
+			const result = await dynamoDbClient.send(new GetItemCommand(params));
+			return {
+				message: "Data retrieval successful",
+				result: result,
+				error: null
 			};
 		} else {
-			params = {
-				TableName: tableName,
+			do {
+				if (lastEvaluatedKey) {
+					params.ExclusiveStartKey = lastEvaluatedKey;
+				}
+				const result = await dynamoDbClient.send(new ScanCommand(params));
+				allResults.push(...result.Items);
+				lastEvaluatedKey = result.LastEvaluatedKey;
+				await new Promise((resolve) => {setTimeout(resolve, 1000)});
+			} while (lastEvaluatedKey);
+
+			return {
+				message: "Data retrieval successful",
+				result: allResults,
+				error: null
 			};
 		}
-
-		do {
-			if (lastEvaluatedKey) {
-				params.ExclusiveStartKey = lastEvaluatedKey;
-			}
-			const result = await dynamoDbClient.send(new ScanCommand(params));
-			allResults.push(...result.Items);
-			lastEvaluatedKey = result.LastEvaluatedKey;
-			await new Promise((resolve) => {setTimeout(resolve, 1000)});
-		} while (lastEvaluatedKey);
-
-		return {
-			message: "Data retrieval successful",
-			result: allResults,
-			error: null
-		};
 	} catch (error) {
 		if (error.name === 'ResourceNotFoundException') {
 			return {
