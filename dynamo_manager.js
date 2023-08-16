@@ -1,22 +1,24 @@
 const { DynamoDBClient, 
 		BatchWriteItemCommand,  
 		ScanCommand,
-		GetItemCommand} = require("@aws-sdk/client-dynamodb");
+		GetItemCommand } = require("@aws-sdk/client-dynamodb");
 
 
 exports.handler = async (event, context) => {
 	const action = event.action;
 	const table = event.table;
-	const data = event.data;
+	const payload = event.payload;
 	switch (action) {
 		case 'get':
-			let key = null;
-			if (data) {
-				key = data.key;	
+			let partitionKey = null;
+			let sortKey = null;
+			if (payload) {
+				partitionKey = payload.partitionKey || null;
+				sortKey = payload.sortKey || null;
 			}
-			return getItems(table, key);
+			return getItems(table, partitionKey, sortKey);
 		case 'insert':
-			const payload = data.payload || null;
+			payload = data.payload || null;
 			if (payload) {
 				return insertItems(table, payload);	
 			} else {
