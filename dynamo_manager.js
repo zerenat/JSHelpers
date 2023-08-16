@@ -2,7 +2,6 @@ const { DynamoDBClient,
 		BatchWriteItemCommand,  
 		ScanCommand,
 		GetItemCommand} = require("@aws-sdk/client-dynamodb");
-const creds = require("./credentials.json")
 
 
 exports.handler = async (event, context) => {
@@ -52,8 +51,8 @@ exports.handler = async (event, context) => {
 const dynamoDbClient = new DynamoDBClient({
 	region: "eu-west-1",
 	credentials: {
-	  accessKeyId: creds.accessKeyId,
-	  secretAccessKey: creds.secretAccessKey,
+	  accessKeyId: process.env.accessKeyId,
+	  secretAccessKey: process.env.secretAccessKey,
 	}
   });
 
@@ -65,12 +64,17 @@ async function getItems(tableName, partitionKey = null, sortKey = null) {
 	};
 	try {
 		if (partitionKey) {
-			params.Key = {[partitionKey.name]: {"S": partitionKey.value}}
+			let key = {[partitionKey.name]: {"S": partitionKey.value}}
+			if (sortKey) {
+				key[sortKey.name] = sortKey.value;
+			}
+			params.Key = key
 			const result = await dynamoDbClient.send(new GetItemCommand(params));
 			return {
 				message: "Data retrieval successful",
 				result: result,
-				error: null
+				error: null,
+				statusCode: 200
 			};
 		} else {
 			do {
@@ -86,7 +90,8 @@ async function getItems(tableName, partitionKey = null, sortKey = null) {
 			return {
 				message: "Data retrieval successful",
 				result: allResults,
-				error: null
+				error: null,
+				statusCode: 200
 			};
 		}
 	} catch (error) {
@@ -95,18 +100,21 @@ async function getItems(tableName, partitionKey = null, sortKey = null) {
 				message: "Table not found.",
 				result: null,
 				error: error,
+				statusCode: 404
 			};
 	} else if (error.name === 'RequestLimitExceeded') {
 			return {
 				message: "Request limit exceeded.",
 				result: null,
 				error: error,
+				statusCode: 429
 			};
 	} else {
 			return {
 				message: "Failed to retrieve data.",
 				result: null,
 				error: error,
+				statusCode: 500
 			};
 		}
 	}
@@ -221,4 +229,3 @@ async function deleteItems(tableName, columnName, values) {
 		}
 	}
 }
-
