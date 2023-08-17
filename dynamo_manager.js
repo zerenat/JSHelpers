@@ -1,42 +1,45 @@
 const { DynamoDBClient, 
-		BatchWriteItemCommand,  
+		BatchWriteItemCommand,  		
 		ScanCommand,
-		GetItemCommand } = require("@aws-sdk/client-dynamodb");
-
+		GetItemCommand, 
+	} = require("@aws-sdk/client-dynamodb");
 
 exports.handler = async (event, context) => {
 	const action = event.action;
 	const table = event.table;
-	const payload = event.payload;
+	const inputs = event.data;
 	switch (action) {
 		case 'get':
-			let partitionKey = null;
-			let sortKey = null;
-			if (payload) {
-				partitionKey = payload.partitionKey || null;
-				sortKey = payload.sortKey || null;
-			}
-			return getItems(table, partitionKey, sortKey);
-		case 'insert':
-			payload = data.payload || null;
-			if (payload) {
-				return insertItems(table, payload);	
+			if (table) {
+				if (inputs) {
+					return getItems(table, inputs);
+				} else {
+					return getItems(table);
+				}
 			} else {
 				return {
-					message: "Insert payload is undefined",
+					message: "No table presented",
 					result: null,
-					statusCode: 400,
+					error: null
+				}				
+			}
+		case 'insert':
+			if (inputs) {
+				return insertItems(table, inputs);	
+			} else {
+				return {
+					message: "No data presented",
+					result: null,
 					error: null
 				}
 			}
 		case 'delete':
-			if (payload) {
-				return deleteItems(table, payload);	
+			if (inputs) {
+				return deleteItems(table, inputs);	
 			} else {
 				return {
-					message: "Delete payload is undefined",
+					message: "No data presented",
 					result: null,
-					statusCode: 400,
 					error: null
 				}
 			}
@@ -44,7 +47,6 @@ exports.handler = async (event, context) => {
 			return {
 				message: "action is either undefined or does not match any available operations",
 				result: null,
-				statusCode: 400,
 				error: null
 			}
 	}
@@ -58,26 +60,39 @@ const dynamoDbClient = new DynamoDBClient({
 	}
   });
 
-async function getItems(tableName, partitionKey = null, sortKey = null) {
+async function getItems(tableName, inputs = null) {
 	let allResults = [];
 	let lastEvaluatedKey = null;
 	let params = {
 		TableName: tableName
 	};
 	try {
-		if (partitionKey) {
-			let key = {[partitionKey.name]: {"S": partitionKey.value}}
-			if (sortKey) {
-				key[sortKey.name] = sortKey.value;
+		if (inputs) {
+			if (inputs.hasOwnProperty("keys") && inputs.keys) {
+				try {
+					const keys = inputs.keys;
+					let key = null;
+					if (keys.hasOwnProperty("partitionKey") && keys.partitionKey) {
+						key = {[keys.partitionKey]: keys.partitionKeyValue}
+					}
+					if (keys.hasOwnProperty("sortKey") && keys.sortKey) {
+						key[keys.sortKey] = keys.sortKeyValue;
+					}
+					params.Key = key;
+					const result = await dynamoDbClient.send(new GetItemCommand(params));
+					return {
+						message: "Data retrieval successful",
+						result: result,
+						error: null,
+					}
+				} catch (error) {
+					return {
+						message: "Data retrieval unsuccessful",
+						result: null,
+						error: error,
+					}
+				}
 			}
-			params.Key = key
-			const result = await dynamoDbClient.send(new GetItemCommand(params));
-			return {
-				message: "Data retrieval successful",
-				result: result,
-				error: null,
-				statusCode: 200
-			};
 		} else {
 			do {
 				if (lastEvaluatedKey) {
@@ -93,7 +108,6 @@ async function getItems(tableName, partitionKey = null, sortKey = null) {
 				message: "Data retrieval successful",
 				result: allResults,
 				error: null,
-				statusCode: 200
 			};
 		}
 	} catch (error) {
@@ -102,42 +116,41 @@ async function getItems(tableName, partitionKey = null, sortKey = null) {
 				message: "Table not found.",
 				result: null,
 				error: error,
-				statusCode: 404
 			};
 	} else if (error.name === 'RequestLimitExceeded') {
 			return {
 				message: "Request limit exceeded.",
 				result: null,
 				error: error,
-				statusCode: 429
 			};
 	} else {
 			return {
 				message: "Failed to retrieve data.",
 				result: null,
 				error: error,
-				statusCode: 500
 			};
 		}
 	}
 }
 
-async function insertItems(tableName, items) {
-	if (!Array.isArray(items)) {
-		items = [items]
-	}
+async function insertItems(tableName, inputs) {
 	let tableItems = [];
-	if (items.length > 0) {
-		items.forEach(async (element) => {
-			tableItems.push({"PutRequest": {
-				"Item": element
-			}})
-		});
+	if (inputs.hasOwnProperty("items") && inputs.items) {
+		let items = inputs.items;
+		if (!Array.isArray(items)) {
+			items = [items]
+		}
+		if (items.length > 0) {
+			items.forEach(async (item) => {
+				tableItems.push({"PutRequest": {
+					"Item": item
+				}})
+			});
+	}
 	} else {
 		return {
 			message: "No items to insert",
 			result: null,
-			statusCode: 400,
 			error: null
 		};
 	}
@@ -148,84 +161,86 @@ async function insertItems(tableName, items) {
 		return {
 			message: "Data insertion complete",
 			result: result,
-			statusCode: 200
 		}
 	} catch (error) {
 		if (error.name === 'ResourceNotFoundException') {
 			return {
 				message: "Table not found",
 				result: result,
-				statusCode: 404,
 				error: error
 			}
 		} else if (error.name === 'RequestLimitExceeded') {
 			return {
 				message: "Request limit exceeded",
 				result: result,
-				statusCode: 429,
 				error: error
 			}
 		} else {
 			return {
 				message: "Failed to insert data",
 				result: result,
-				statusCode: 500,
 				error: error
 			}
 		}
 	}
 }
 
-async function deleteItems(tableName, columnName, values) {
-	if (!Array.isArray(values)) {
-		values = [values]
-	}
+async function deleteItems(tableName, inputs) {
 	let rowValues = [];
-	if (values.length > 0) {
-		values.forEach(async (value) => {
-			rowValues.push({"DeleteRequest": {
-				Key: {
-					[columnName]: value
-				}
-			}})
-		});
-	} else {
-		return {
-			message: "No items to delete",
-			result: null,
-			statusCode: 400,
-			error: null
-		};
-	}
-	let result = null;
-	try {
-		const command = new BatchWriteItemCommand({"RequestItems": {[tableName]: rowValues}});
+	if (inputs.hasOwnProperty("keys") && inputs.keys) {
+		let keys = inputs.keys;
+		if (!Array.isArray(keys)) {
+			keys = [keys]
+		}
+		if (keys.length > 0) {
+			keys.forEach(key => {
+				rowValues.push({
+					DeleteRequest: {
+						Key: {
+							[key.partitionKey]: key.partitionKeyValue
+						}
+					}
+				});
+			});
+		}
+ 	} else {
+        return {
+            message: "No items to delete",
+            result: null,
+            error: null
+        };
+    }
+    let result = null;
+    try {
+        const command = new BatchWriteItemCommand({"RequestItems": { [tableName]: rowValues }});
 		result = await dynamoDbClient.send(command);
 		return {
-			message: "Data insertion complete",
+			message: "Data deletion complete",
 			result: result,
-			statusCode: 200
 		}
 	} catch (error) {
 		if (error.name === 'ResourceNotFoundException') {
 			return {
 				message: "Table not found",
 				result: result,
-				statusCode: 404,
 				error: error
 			}
 		} else if (error.name === 'RequestLimitExceeded') {
 			return {
 				message: "Request limit exceeded",
 				result: result,
-				statusCode: 429,
+				error: error
+			} 
+		} else if (error.name === TypeError) {
+			return {
+				message: "Invalid request data",
+				result: result,
 				error: error
 			}
 		} else {
 			return {
 				message: "Failed to delete items",
 				result: result,
-				statusCode: 500,
 				error: error
 			}
 		}
